@@ -20,6 +20,8 @@
     <form id="form" action="">
       <input id="input"/>
       <button type='submit' , id='send-button'>Send</button>
+      <input id="ratingInput" placeholder="rating"/>
+      <p id="ratingButton">submit</p>
     </form>
 
     <script src="/socket.io/socket.io.js"></script>
@@ -29,6 +31,7 @@
                 var messages = document.getElementById('messages');
                 var form = document.getElementById('form');
                 var input = document.getElementById('input');
+                var ratingInput = document.getElementById('ratingInput');
 
 
                 console.log(document);
@@ -79,6 +82,15 @@
                         socket.emit('send-chat-message', input.value);
                         input.value = '';
                     }
+                    });
+
+                    document.getElementById("ratingButton").addEventListener('click', function(e) {
+                       
+                    e.preventDefault();
+                    if (ratingInput.value) {
+                        socket.emit('send-rating', ratingInput.value);
+                        ratingInput.value = '';
+                      }
                     });
                 }          
 </script>
