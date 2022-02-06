@@ -1,98 +1,93 @@
-<!DOCTYPE html>
-<html>
-  <head>
-    <title>Socket.IO chat</title>
-    <style>
-      body { margin: 0; padding-bottom: 3rem; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+const express = require('express');
+const app = express();
+const http = require('http');
+const server = http.createServer(app);
+const { Server } = require("socket.io");
+const io = new Server(server);
+const chats = require('./model/chats');
+const users = require('./model/users');
+const rating = require('./model/rating');
+const mongoose =  require('mongoose');
 
-      #form { background: rgba(0, 0, 0, 0.15); padding: 0.25rem; position: fixed; bottom: 0; left: 0; right: 0; display: flex; height: 3rem; box-sizing: border-box; backdrop-filter: blur(10px); }
-      #input { border: none; padding: 0 1rem; flex-grow: 1; border-radius: 2rem; margin: 0.25rem; }
-      #input:focus { outline: none; }
-      #form > button { background: #333; border: none; padding: 0 1rem; margin: 0.25rem; border-radius: 3px; outline: none; color: #fff; }
+ mongoose.connect('mongodb://localhost:27017/chat-app');
 
-      #messages { list-style-type: none; margin: 0; padding: 0; }
-      #messages > li { padding: 0.5rem 1rem; }
-      #messages > li:nth-child(odd) { background: #efefef; }
-    </style>
-  </head>
-<body>
-    <div id="messages"></div>
-    <form id="form" action="">
-      <input id="input"/>
-      <button type='submit' , id='send-button'>Send</button>
-      <input id="ratingInput" placeholder="rating"/>
-      <p id="ratingButton">submit</p>
-    </form>
+app.get('/', (req, res) => {
+    res.sendFile(__dirname + '/index.html');
+});
 
-    <script src="/socket.io/socket.io.js"></script>
-<script>
-                var socket = io();
+io.on('connection', (socket) => {
 
-                var messages = document.getElementById('messages');
-                var form = document.getElementById('form');
-                var input = document.getElementById('input');
-                var ratingInput = document.getElementById('ratingInput');
+    // default joining to room1
+    socket.join('room1');
+
+    // chat-message consume
+    socket.on('send-chat-message',message=>{
+        users.findOne({'socketId':socket.id}).then(userData=>{
+            const chatMessageObj =  new chats({
+                userName: userData.name,
+                userId : socket.id,
+                message: message,
+                room: "room1",
+                createdOn : new Date()
+            });
+
+            chatMessageObj.save().then(savedData=>{
+                socket.broadcast.emit('chat-message',{message:message , name : userData.name});
+             })
+        })
+       
+    })
+
+    // new user added 
+    socket.on('new-user',name=>{
+
+       const user = new users({
+            name: name,
+            room: "room1",
+            socketId : socket.id,
+            isActive: true
+        })
+        user.save().then(userData=>{
+            socket.broadcast.emit('user-connected',name);
+        })
+    })
 
 
-                console.log(document);
-                const appendMessage = (message)=>{
-                    const messageElement = document.createElement('div');
-                    messageElement.innerText = message
-                    messages.append(messageElement)
-                };
+    // getting old chat
+        socket.on('old-chat',name=>{
+            chats.find({'room':'room1'}).sort({"createdOn":1}).then(oldChats=>{
+                console.log("oldChats",oldChats);
+                socket.emit('get-old-chat',oldChats);
+            });
+    })
 
-                
-                const name = prompt('what is your name');
+    // new user added 
+    socket.on('send-rating',ratingValue=>{
+
+        users.findOne({'socketId':socket.id}).then(userData=>{
+            const ratingObj = new rating({
+                name: userData.name,
+                room: "room1",
+                socketId : socket.id,
+                rating: ratingValue
+            })
+            ratingObj.save().then(userData=>{
+                console.log(userData);
+            })
+        });
+        
+     })
+
+    // disconnected user
+    socket.on('disconnect',()=>{
+        users.findOneAndUpdate({'socketId':socket.id},{'$set':{'isActive':false}},{new:true}).then(userData=>{
+            console.log(userData);
+            socket.broadcast.emit('user-disconnected',userData.name);
+        })
+    })
+  });
 
 
-                // new user added
-                socket.emit('new-user',name);
-
-                socket.emit('old-chat',name);
-
-                //other message
-                socket.on('get-old-chat',oldChat=>{
-                    oldChat.forEach(oldChat=>{
-                        appendMessage(`${oldChat.userName} : ${oldChat.message} `);
-                    });
-                    appendMessage('you joined');
-                })
-
-                //other message
-                socket.on('chat-message',message=>{
-                    appendMessage(`${message.name} : ${message.message} `);
-                })
-
-                // when user is connected
-                socket.on('user-connected',name=>{
-                    appendMessage(`${name} connected`);
-                })
-
-                // when user is disconnected
-                socket.on('user-disconnected',name=>{
-                    appendMessage(`${name} disconnected`);
-                })
-
-                
-                if(form){
-                    form.addEventListener('submit', function(e) {
-                    e.preventDefault();
-                    if (input.value) {
-                        appendMessage(`You ${input.value}`)
-                        socket.emit('send-chat-message', input.value);
-                        input.value = '';
-                    }
-                    });
-
-                    document.getElementById("ratingButton").addEventListener('click', function(e) {
-                       
-                    e.preventDefault();
-                    if (ratingInput.value) {
-                        socket.emit('send-rating', ratingInput.value);
-                        ratingInput.value = '';
-                      }
-                    });
-                }          
-</script>
-  </body>
-</html>
+server.listen(3000, () => {
+  console.log('listening on *:3000');
+});
